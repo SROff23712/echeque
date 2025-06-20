@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Échecs 1v1 – Connexion Google</title>
+  <style>
+    body { background: #121212; color: #eee; text-align: center; font-family: sans-serif; }
+    #board { width: 400px; margin: 20px auto; }
+    #status, #players { margin-top: 10px; }
+  </style>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.0/chess.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+</head>
+<body>
+  <h1>Échecs 1v1 avec Google</h1>
+  <div id="g_id_onload"
+       data-client_id="**TON_CLIENT_ID ici**"
+       data-callback="handleCredentialResponse">
+  </div>
+  <div class="g_id_signin" data-type="standard"></div>
+
+  <div id="players"></div>
+  <div id="board"></div>
+  <div id="status">Connecte-toi pour jouer</div>
+
+  <script>
+    let socket, game, board, color, profile;
+
+    function handleCredentialResponse(response) {
+      const payload = JSON.parse(atob(response.credential.split('.')[1]));
+      profile = { name: payload.name, email: payload.email };
+      startGame();
+    }
+
+    function startGame() {
+      document.getElementById('status').textContent = 'Connexion…';
+      socket = new WebSocket('ws://25.22.67.100:3000');
+      socket.onopen = () => socket.send(JSON.stringify({ type:'login', profile }));
+      
+      socket.onmessage = event => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'players') {
+          document.getElementById('players').textContent =
+            `Blancs: ${msg.players.w?.name || '…'} · Noirs: ${msg.players.b?.name || '…'}`;
+        }
+        if (msg.type === 'start') {
+          color = msg.color;
+          game = new Chess();
+          board = Chessboard('board', {
+            draggable: true,
+            position: 'start',
+            orientation: color === 'w' ? 'white' : 'black',
+            onDragStart: (src, piece) => {
+              if (game.game_over() || game.turn() !== color || piece[0] !== color) return false;
+            },
+            onDrop: (src, tgt) => {
+              const move = game.move({ from: src, to: tgt, promotion:'q' });
+              if (!move) return 'snapback';
+              socket.send(JSON.stringify({ type:'move', move }));
+            }
+          });
+          document.getElementById('status').textContent =
+            color === 'w' ? 'Tu joues les blancs' : 'Tu joues les noirs';
+        }
+        if (msg.type === 'move') {
+          game.move(msg.move);
+          board.position(game.fen());
+          document.getElementById('status').textContent =
+            game.in_checkmate() ? 'Échec et mat' :
+            game.turn() === color ? 'À ton tour' : 'Tour de l’adversaire';
+        }
+      };
+      socket.onerror = () => document.getElementById('status').textContent = 'Erreur de connexion.';
+    }
+  </script>
+</body>
+</html>

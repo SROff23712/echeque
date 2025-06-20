@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Échecs 1v1 avec Google</title>
+  <title>Échecs 1v1 – Google + WebSocket</title>
   <style>
-    body { background: #111; color: #fff; font-family: sans-serif; text-align: center; }
+    body { background: #111; color: #eee; font-family: sans-serif; text-align: center; }
     #board { width: 400px; margin: 20px auto; }
     .g_id_signin { margin-top: 20px; }
   </style>
@@ -27,64 +27,62 @@
   <div id="status">Non connecté</div>
 
   <script>
-    let board, game, socket, color, profile;
+    let game, board, ws, color, profile;
 
     function handleCredentialResponse(response) {
       const payload = JSON.parse(atob(response.credential.split('.')[1]));
       profile = { name: payload.name, email: payload.email };
-      connectToServer();
+      connectWS();
     }
 
-    function connectToServer() {
-      socket = new WebSocket(`ws://${window.location.host}`);
+    function connectWS() {
+      const wsUrl = 'wss://TON_TUNNEL_NGROK'; // Ex: 'wss://abc12345.ngrok.io'
+      ws = new WebSocket(wsUrl);
 
-      socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'login', profile }));
-        document.getElementById('status').textContent = "Connecté. En attente de l’adversaire...";
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'login', profile }));
+        document.getElementById('status').textContent = "Connecté, attente adversaire…";
       };
 
-      socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-
+      ws.onmessage = evt => {
+        const msg = JSON.parse(evt.data);
         if (msg.type === 'players') {
-          document.getElementById('players').textContent = `
-            Blancs : ${msg.players.w?.name || '…'} · Noirs : ${msg.players.b?.name || '…'}
-          `;
+          document.getElementById('players').textContent =
+            `Blancs : ${msg.players.w?.name || '…'} · Noirs : ${msg.players.b?.name || '…'}`;
         }
-
         if (msg.type === 'start') {
           color = msg.color;
           game = new Chess();
           board = Chessboard('board', {
             draggable: true,
-            position: 'start',
             orientation: color === 'w' ? 'white' : 'black',
+            position: 'start',
             onDragStart: (src, piece) => {
               if (game.turn() !== color || piece[0] !== color || game.game_over()) return false;
             },
             onDrop: (src, tgt) => {
               const move = game.move({ from: src, to: tgt, promotion: 'q' });
               if (!move) return 'snapback';
-              socket.send(JSON.stringify({ type: 'move', move }));
+              ws.send(JSON.stringify({ type: 'move', move }));
             }
           });
-          document.getElementById('status').textContent = "Partie commencée ! Tu es " + (color === 'w' ? 'blanc' : 'noir');
+          document.getElementById('status').textContent =
+            `Partie lancée ! Tu joues les ${color === 'w' ? 'blancs' : 'noirs'}`;
         }
-
         if (msg.type === 'move') {
           game.move(msg.move);
           board.position(game.fen());
-          const status = game.in_checkmate()
+          const st = game.in_checkmate()
             ? 'Échec et mat'
             : game.turn() === color
               ? 'À ton tour'
-              : 'Tour de l’adversaire';
-          document.getElementById('status').textContent = status;
+              : 'Tour adversaire';
+          document.getElementById('status').textContent = st;
         }
       };
 
-      socket.onerror = () => {
-        document.getElementById('status').textContent = "Erreur WebSocket.";
+      ws.onerror = () => {
+        document.getElementById('status').textContent = "Erreur WebSocket";
       };
     }
   </script>
